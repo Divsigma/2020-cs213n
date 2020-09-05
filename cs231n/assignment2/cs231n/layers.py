@@ -612,7 +612,7 @@ def conv_forward_naive(x, w, b, conv_param):
     W_out = int((H + 2*pad - WW) / stride) + 1
     out = np.zeros((N, F, H_out, W_out))
     
-    # remove loop of num_batch (for i in range(N)):
+    # "fast" version:
     #   time consume drops from 5s to 0.2s (but slower in backward ... ??)
     for f in range(F):
         cnt = 0
@@ -621,6 +621,7 @@ def conv_forward_naive(x, w, b, conv_param):
                 out[:, f, int(cnt/H_out), int(cnt%H_out)] = np.sum(x_pad[:, :, p:(p+HH), q:(q+WW)] * w[f], axis=(1,2,3)) + b[f]
                 cnt += 1
     '''
+    # "clear" version:
     for i in range(N):
         for f in range(F):
             cnt = 0
@@ -662,9 +663,9 @@ def conv_backward_naive(dout, cache):
     # 1. Unpack the cache
     x, w, b, conv_param = cache
     
-    N, F, H_out, W_out = dout.shape                           # `dout` shape: (N, F, H', W')
-    _, C, H, W = x.shape                                      # `x` shape: (N, C, H, W)
-    _, _, HH, WW = w.shape                                    # `w` shape: (F, C, HH, WW)
+    N, F, H_out, W_out = dout.shape                                  # `dout` shape: (N, F, H', W')
+    _, C, H, W = x.shape                                             # `x` shape: (N, C, H, W)
+    _, _, HH, WW = w.shape                                           # `w` shape: (F, C, HH, WW)
     stride = conv_param['stride']
     pad = conv_param['pad']
     
@@ -674,7 +675,7 @@ def conv_backward_naive(dout, cache):
     # 2. Initialize and compute gradient of `b`
     dx = np.zeros(x.shape)
     dw = np.zeros(w.shape)
-    db = np.sum(dout, axis=(0, 2, 3))                         # sum up dout for each filter
+    db = np.sum(dout, axis=(0, 2, 3))                                # sum up dout for each filter
     
     # 3. Compute gradient of `w`
     # "fast" version:
@@ -703,18 +704,18 @@ def conv_backward_naive(dout, cache):
     dout_pad = np.pad(dout_pad, ((0,), (0,), (HH-1,), (WW-1,)), 'constant')
     
     # (2) "fast" version -- just treat each filter as channel, rotate `w` and perform conv_forward_naive():
-    #                      THE KERNEL USED IN CONVOLUTION IS `w_rot`
+    #                       THE KERNEL USED IN CONVOLUTION IS `w_rot`
     #    time consume drop from 100s to 0.8s (together with "fast" version of `dw` computation and "fast" version of conv_forward_navie)
-    param = {'stride': 1, 'pad': 0}
+    param = {'stride': 1, 'pad': 0}                                  # THE KERNEL USED IN CONVOLUTION IS `w_rot`,
+                                                                     # and stride equals 1 and no pad needed
     w_rot = np.rot90(w, k=2, axes=(2, 3)).transpose((1, 0, 2, 3))    # treat filters as channels and rotate `w` !!!!
     b = np.zeros(C)                                                  # treat filters as channels !!!!
-
-    dx_pad, _ = conv_forward_naive(dout_pad, w_rot, b, param)        # THE KERNEL USED IN CONVOLUTION IS `w_rot`
-                                                                     # `dx_acc` shape: (N, C, H, W)
+    
+    dx_pad, _ = conv_forward_naive(dout_pad, w_rot, b, param)        # `dx_acc` shape: (N, C, H, W)
                                                                      # `dout_pad` shape: (N, F, H'', W'')
                                                                      # `w_rot` shape: (C, F, HH, WW)
                                                                      # `b` shape: (C,)
-    dx = dx_pad[:, :, pad:-pad, pad:-pad]
+    dx = dx_pad[:, :, pad:-pad, pad:-pad]                            # DON'T FORGET TO REMOVE THE PAD
     
     '''
     # (2) "clear" version (but much slower):
