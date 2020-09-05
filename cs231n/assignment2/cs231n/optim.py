@@ -170,10 +170,10 @@ def adam(w, dw, config=None):
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
     # t is your iteration counter going from 1 to infinity
-    # config['t'] = 200
+    
     config['m'] = config['beta1'] * config['m'] + (1-config['beta1']) * dw
     mt = config['m'] / (1 - config['beta1']**config['t'])
-    config['v'] = config['beta2'] * config['v'] + (1-config['beta2']) * dw**2
+    config['v'] = config['beta2'] * config['v'] + (1-config['beta2']) * (dw*dw)
     vt = config['v'] / (1 - config['beta2']**config['t'])
     
     next_w = w - config['learning_rate']*mt / (np.sqrt(vt) + config['epsilon'])

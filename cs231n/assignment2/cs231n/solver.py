@@ -263,7 +263,7 @@ class Solver(object):
             
             # NOTE: the next two lines are added by myself to meet the demands of Adam
             for k in self.optim_configs:
-                self.optim_configs[k]['t'] = t+1
+                self.optim_configs[k]['t'] = t + 1
             
             self._step()
 

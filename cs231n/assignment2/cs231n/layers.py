@@ -821,13 +821,12 @@ def max_pool_forward_naive(x, pool_param):
     W_out = int((W - pool_width) / stride) + 1
     out = np.zeros((N, C, H_out, W_out))
     
-    for i in range(N):
-        for c in range(C):
-            cnt = 0
-            for p in range(0, H - pool_height + 1, stride):
-                for q in range(0, W - pool_width + 1, stride):
-                    out[i, c, int(cnt/H_out), int(cnt%H_out)] = np.max(x[i, c, p:(p+pool_height), q:(q+pool_width)])
-                    cnt += 1
+    # vectorized, got rid of the loop in range(N) and range(C) !!
+    cnt = 0
+    for p in range(0, H - pool_height + 1, stride):
+        for q in range(0, W - pool_width + 1, stride):
+            out[:, :, int(cnt/H_out), int(cnt%H_out)] = np.max(x[:, :, p:(p+pool_height), q:(q+pool_width)], axis=(2, 3))
+            cnt += 1
     
     pass
 
@@ -870,7 +869,8 @@ def max_pool_backward_naive(dout, cache):
             cnt = 0
             for p in range(0, H - pool_height + 1, stride):
                 for q in range(0, W - pool_width + 1, stride):
-                    idx = np.argmax(x[i, c, p:(p+pool_height), q:(q+pool_width)])
+                    x_region = x[i, c, p:(p+pool_height), q:(q+pool_width)]
+                    idx = np.argmax(x_region)
                     dx[i, c, p + int(idx/pool_height), q + int(idx%pool_height)] = dout[i, c, int(cnt/H_out), int(cnt%H_out)]
                     cnt += 1
     
@@ -915,7 +915,12 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    N, C, H, W = x.shape
+    x_flat = x.transpose((1, 0, 2, 3)).reshape((C, -1)).T
+    out_flat, cache = batchnorm_forward(x_flat, gamma, beta, bn_param)
+    out = out_flat.T.reshape((C, N, H, W)).transpose((1, 0, 2, 3))
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -949,7 +954,13 @@ def spatial_batchnorm_backward(dout, cache):
     # Your implementation should be very short; ours is less than five lines. #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    
+    N, C, H, W = dout.shape
+    dout_flat = dout.transpose((1, 0, 2, 3)).reshape((C, -1)).T
+    dx_flat, dgamma, dbeta = batchnorm_backward(dout_flat, cache)
+    dx = dx_flat.T.reshape((C, N, H, W)).transpose((1, 0, 2, 3))
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -989,7 +1000,26 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     # and layer normalization!                                                #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    N, C, H, W = x.shape
+    group_size = int(C/G)
+    out = np.zeros(x.shape)
+    group_cache = []
+    
+    x_flat = x.transpose((1, 0, 2, 3)).reshape((C, -1)).T
+    out_flat = np.zeros(x_flat.shape)
+    
+    for i in range(0, C, group_size):
+        out_flat_i, group_cache_i = layernorm_forward(x_flat[:, i:(i+group_size)], 
+                                                      gamma[i:(i+group_size)], 
+                                                      beta[i:(i+group_size)], 
+                                                      gn_param)
+        out_flat[:, i:(i+group_size)] = out_flat_i
+        group_cache.append(group_cache_i)
+    
+    out = out_flat.T.reshape((C, N, H, W)).transpose((1, 0, 2, 3))
+    cache = (G, group_cache)
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -1020,6 +1050,20 @@ def spatial_groupnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
+    
+    N, C, H, W = dout.shape
+    G, group_cache = cache
+    group_size = int(C/G)
+    
+    dout_flat = dout.transpose((1, 0, 2, 3)).reshape((C, -1)).T
+    dx_flat, dgamma, dbeta = np.zeros(dout_flat.shape), np.zeros(C), np.zeros(C)
+    
+    for i in range(0, C, group_size):
+        c_span = range(i, (i+group_size))
+        dx_flat[:, c_span], dgamma[c_span], dbeta[c_span] = layernorm_backward(dout_flat[:, c_span], group_cache[int(i/group_size)])
+    
+    dx = dx_flat.T.reshape((C, N, H, W)).transpose((1, 0, 2, 3))
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****

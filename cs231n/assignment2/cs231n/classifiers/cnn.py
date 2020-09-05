@@ -62,7 +62,20 @@ class ThreeLayerConvNet(object):
         # the start of the loss() function to see how that happens.                #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+        
+        C, H, W = input_dim
+        
+        ##########################################################################################################
+        # IF YOU USE weight_scale * np.ones(shape) TO INITIALIZE                                                 #
+        # YOU CAN NEVER OVERFIT ON SMALL DATASET !!! NO MATTER HOW HARD YOU TUNE OR HOW BIG DATASET YOU USE !!!  #
+        ##########################################################################################################
+        self.params['W1'] = weight_scale * np.random.randn(num_filters, C, filter_size, filter_size)
+        self.params['b1'] = np.zeros(num_filters)
+        self.params['W2'] = weight_scale * np.random.randn(int(num_filters*H*W/4), hidden_dim)        # BAD HARD CODE !
+        self.params['b2'] = np.zeros(hidden_dim)
+        self.params['W3'] = weight_scale * np.random.randn(hidden_dim, num_classes)
+        self.params['b3'] = np.zeros(num_classes)
+        
         pass
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -101,7 +114,13 @@ class ThreeLayerConvNet(object):
         # cs231n/layer_utils.py in your implementation (already imported).         #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+        
+        crp_out, crp_cache = conv_relu_pool_forward(X, W1, b1, conv_param, pool_param)
+        af_relu_out, af_relu_cache = affine_relu_forward(crp_out, W2, b2)              # input was is designed to be (N, D1, ..., Dk)
+                                                                                       # so thoughful ! 
+        af_out, af_cache = affine_forward(af_relu_out, W3, b3)
+        scores = af_out
+        
         pass
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -124,7 +143,22 @@ class ThreeLayerConvNet(object):
         # of 0.5 to simplify the expression for the gradient.                      #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+        
+        reg = self.reg
+        loss, dout = softmax_loss(scores, y)
+        
+        # compute loss
+        loss += 0.5*reg*np.sum(W1*W1) + 0.5*reg*np.sum(W2*W2) + 0.5*reg*np.sum(W3*W3)
+        
+        # compute gradients
+        dout, dW3, db3 = affine_backward(dout, af_cache)
+        dout, dW2, db2 = affine_relu_backward(dout, af_relu_cache)                     # again, the ouput was designed to feed 
+                                                                                       # convolution layer directly, so thoughful !
+        dout, dW1, db1 = conv_relu_pool_backward(dout, crp_cache)
+        grads['W3'], grads['b3'] = dW3 + reg*W3, db3
+        grads['W2'], grads['b2'] = dW2 + reg*W2, db2
+        grads['W1'], grads['b1'] = dW1 + reg*W1, db1
+        
         pass
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
