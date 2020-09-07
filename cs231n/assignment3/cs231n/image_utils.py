@@ -68,7 +68,9 @@ def image_from_url(url):
         with open(fname, "wb") as ff:
             ff.write(f.read())
         img = imread(fname)
-        os.remove(fname)
+        # os.remove(fname)                           # using python 3.7+, may be this line should be removed
+                                                     # because according to https://docs.python.org/3/library/tempfile.html
+                                                     # the temporal file will be destroyed as soon as it was closed
         return img
     except urllib.error.URLError as e:
         print("URL Error: ", e.reason, url)

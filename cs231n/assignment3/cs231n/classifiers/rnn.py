@@ -150,7 +150,51 @@ class CaptioningRNN(object):
         # in your implementation, if needed.                                       #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+        
+        ##################
+        ## Forward Pass ##
+        ##################
+        
+        # (1) Transform features(N, D) to features_h0(N, H)
+        features_h0, cache_feature_af = affine_forward(features, W_proj, b_proj)
+        
+        # (2) Embed captions_in(N,T) to captions_in_embed(N, T, W)
+        captions_in_embed, cache_embed = word_embedding_forward(captions_in, W_embed)
+        
+        # (3) Process captions_in_embed(N, T, W) and features_h0(N, H) to captions_in_hidden(N, T, H)
+        if self.cell_type == "rnn":
+            captions_in_hidden, cache_rnn = rnn_forward(captions_in_embed, features_h0, Wx, Wh, b)
+        
+        # (4) Transform captions_in_hidden(N, T, H) to captions_in_out(N, T, V)
+        captions_in_out, cache_temporal_af = temporal_affine_forward(captions_in_hidden, W_vocab, b_vocab)
+        
+        # (5) Compute the loss using captions_in_out(N, T, V) and captions_out(N, T)
+        #     NOTE: captions_in(N, T) is the first (N, T) elements of captions(N, T+1)
+        #           captions_out(N, T) is the last (N, T) elements of captions(N, T+1)
+        loss, dout = temporal_softmax_loss(captions_in_out, captions_out, mask)
+        
+        
+        ###################
+        ## Backward Pass ##
+        ###################
+        
+        # (1) Backward from softmax to captions_in_out(N, T, V)
+        d_captions_in_out = dout
+        
+        # (2) Backward form captions_in_out(N, T, V) to captions_in_hidden(N, T, H)
+        d_captions_in_hidden, grads['W_vocab'], grads['b_vocab'] = temporal_affine_backward(d_captions_in_out, cache_temporal_af)
+        
+        # (3) Backward from captions_in_hidden(N, T, H) to captions_in_embed(N, T, W) and features_h0(N, H)
+        if self.cell_type == "rnn":
+            d_captions_in_embed, d_features_h0, grads['Wx'], grads['Wh'], grads['b'] = rnn_backward(d_captions_in_hidden, cache_rnn)
+        
+        # (4) Backward from captions_in_embed(N, T, W) to captions_in(N, T)
+        #     NOTE: I don't need d_captions_in for captions_in just contains the index of words
+        grads['W_embed'] = word_embedding_backward(d_captions_in_embed, cache_embed)
+        
+        # (5) Backward from features_h0(N, H) to features(N, D)
+        d_features, grads['W_proj'], grads['b_proj'] = affine_backward(d_features_h0, cache_feature_af)
+        
         pass
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -218,7 +262,38 @@ class CaptioningRNN(object):
         # you are using an LSTM, initialize the first cell state to zeros.        #
         ###########################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+        
+        # Bootstrap
+        prev_word = self._start * np.ones((N, 1), dtype=np.int32)
+        prev_h, _ = affine_forward(features, W_proj, b_proj)
+        
+        # Iteration
+        for i in range(max_length):
+            # (1) Embed the prev_word(N, 1) to prev_word_embed(N, W)
+            #     NOTE: 1. self._start is the index of `<START>` (token) in vocabulary
+            #           2. word_embedding_forward() return shape of (N, 1, W)
+            prev_word_embed, _  = word_embedding_forward(prev_word, W_embed)
+            prev_word_embed = prev_word_embed[:, 0, :]
+            
+            # (2) Process prev_word_embed(N, W) and prev_h(N, H) to prev_word_hidden(N, H)
+            #     then also store prev_word_hidden(N, H) as prev_h
+            if self.cell_type == "rnn":
+                prev_word_hidden, _ = rnn_step_forward(prev_word_embed, prev_h, Wx, Wh, b)
+                prev_h = prev_word_hidden
+            
+            # (3) Transform prev_word_hidden(N, H) to prev_word_out(N, V)
+            #     NOTE: 1. the shape of input to temporal_affine_forward() should be (N, 1, H)
+            #           2. the shape of output from temporal_affine_forward() is (N, 1, V)
+            prev_word_hidden = np.array([prev_word_hidden]).transpose((1, 0, 2))
+            prev_word_out, _ = temporal_affine_forward(prev_word_hidden, W_vocab, b_vocab)
+            prev_word_out = prev_word_out[:, 0, :]
+            
+            # (4) Get the next_word_idx(N, indexes of word in `prev_word_out` with the highest score), 
+            #     then store them in captions(N, max_length) and prev_word(N, index of next word)
+            next_word_idx = np.argmax(prev_word_out, axis=1)
+            captions[:, i] = next_word_idx
+            prev_word = np.array([next_word_idx]).T
+        
         pass
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
