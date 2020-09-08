@@ -354,7 +354,20 @@ def lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b):
     # You may want to use the numerically stable sigmoid implementation above.  #
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    N, H = prev_h.shape
+    
+    u = x.dot(Wx) + prev_h.dot(Wh) + b
+    i = sigmoid(u[:, :H])
+    f = sigmoid(u[:, H:2*H])
+    o = sigmoid(u[:, 2*H:3*H])
+    g = np.tanh(u[:, 3*H:])
+    
+    next_c = f * prev_c + i * g
+    next_h = o * np.tanh(next_c)
+    
+    cache = ((x, prev_h, Wx, Wh, u), (i, f, o, g, prev_c, next_c))
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -390,7 +403,40 @@ def lstm_step_backward(dnext_h, dnext_c, cache):
     # the output value from the nonlinearity.                                   #
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    # Unpack the cache
+    (x, prev_h, Wx, Wh, u), (i, f, o, g, prev_c, next_c) = cache
+    
+    # Gate Backward
+    tanhc = np.tanh(next_c)
+    do = dnext_h * tanhc
+    dtanhc = dnext_h * o
+    
+    dnext_c += dtanhc * (1 - tanhc**2)
+    
+    dfc = dnext_c
+    dig = dnext_c
+    
+    dprev_c = dfc * f
+    df = dfc * prev_c
+    
+    di = dig * g
+    dg = dig * i
+    
+    N, H = prev_h.shape
+    du = np.zeros(u.shape)
+    du[:, :H] = (1 - i) * i * di
+    du[:, H:2*H] = (1 - f) * f * df
+    du[:, 2*H:3*H] = (1 - o) * o * do
+    du[:, 3*H:] = (1 - g**2) * dg
+    
+    # Affine Backward
+    dx = du.dot(Wx.T)
+    dprev_h = du.dot(Wh.T)
+    dWx = x.T.dot(du)
+    dWh = prev_h.T.dot(du)
+    db = np.ones(N).dot(du)
+        
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -430,6 +476,29 @@ def lstm_forward(x, h0, Wx, Wh, b):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
+    N, T, _ = x.shape
+    _, H = h0.shape
+    
+    # Initialization
+    x_t = x.transpose((1, 0, 2))
+    h_t = np.zeros((T, N, H))
+    c_t = np.zeros((T, N, H))
+    cache_list = []
+    
+    # Bootstrap
+    h_t[0], c_t[0], cache_cur = lstm_step_forward(x_t[0], h0, np.zeros((N, H)), Wx, Wh, b)
+    cache_list.append(cache_cur)
+    
+    # Iteration
+    for t in range(1, T):
+        h_t[t], c_t[t], cache_cur = lstm_step_forward(x_t[t], h_t[t-1], c_t[t-1], Wx, Wh, b)
+        cache_list.append(cache_cur)
+    
+    # Prepare for return
+    h = h_t.transpose((1, 0, 2))
+    cache = (cache_list)
+    
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -462,6 +531,44 @@ def lstm_backward(dh, cache):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
+    # Unpack the cache
+    (cache_list) = cache
+    
+    N, T, H = dh.shape
+    _, D = cache_list[-1][0][0].shape                  # elements in cache_list is ((x, prev_h, Wx, Wh, u), (i, f, o, g, prev_c, next_c))
+    
+    # Initialization
+    dh_t = dh.transpose((1, 0, 2))
+    
+    dx_t = np.zeros((T, N, D))
+    dh0 = np.zeros((N, H))
+    dc0 = np.zeros((N, H))
+    dWx = np.zeros((D, 4*H))
+    dWh = np.zeros((H, 4*H))
+    db = np.zeros(4*H)
+    
+    # Iteration
+    t = T-1
+    while t >=0:
+        # Constuct a cache for current step backward
+        cache_cur = cache_list[-1]
+        del cache_list[-1]
+        # Step backward
+        dx_cur, dprev_h_cur, dprev_c_cur, dWx_cur, dWh_cur, db_cur = lstm_step_backward(dh_t[t] + dh0, dc0, cache_cur)
+        # Store or pdate, using `dh0` as `dprev_h(t)`
+        dx_t[t] = dx_cur
+        dh0 = dprev_h_cur
+        dc0 = dprev_c_cur
+        dWx += dWx_cur
+        dWh += dWh_cur
+        db += db_cur
+        # Bootstrap for next Iteration
+        t = t - 1
+    
+    # Prepare for return
+    dx = dx_t.transpose((1, 0, 2))
+    
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****

@@ -162,8 +162,12 @@ class CaptioningRNN(object):
         captions_in_embed, cache_embed = word_embedding_forward(captions_in, W_embed)
         
         # (3) Process captions_in_embed(N, T, W) and features_h0(N, H) to captions_in_hidden(N, T, H)
+        forward_func = None
         if self.cell_type == "rnn":
-            captions_in_hidden, cache_rnn = rnn_forward(captions_in_embed, features_h0, Wx, Wh, b)
+            forward_func = rnn_forward
+        elif self.cell_type == "lstm":
+            forward_func = lstm_forward
+        captions_in_hidden, cache_nn = forward_func(captions_in_embed, features_h0, Wx, Wh, b)
         
         # (4) Transform captions_in_hidden(N, T, H) to captions_in_out(N, T, V)
         captions_in_out, cache_temporal_af = temporal_affine_forward(captions_in_hidden, W_vocab, b_vocab)
@@ -185,9 +189,13 @@ class CaptioningRNN(object):
         d_captions_in_hidden, grads['W_vocab'], grads['b_vocab'] = temporal_affine_backward(d_captions_in_out, cache_temporal_af)
         
         # (3) Backward from captions_in_hidden(N, T, H) to captions_in_embed(N, T, W) and features_h0(N, H)
+        backward_func = None
         if self.cell_type == "rnn":
-            d_captions_in_embed, d_features_h0, grads['Wx'], grads['Wh'], grads['b'] = rnn_backward(d_captions_in_hidden, cache_rnn)
-        
+            backward_func = rnn_backward
+        elif self.cell_type == "lstm":
+            backward_func = lstm_backward
+        d_captions_in_embed, d_features_h0, grads['Wx'], grads['Wh'], grads['b'] = backward_func(d_captions_in_hidden, cache_nn)
+                
         # (4) Backward from captions_in_embed(N, T, W) to captions_in(N, T)
         #     NOTE: I don't need d_captions_in for captions_in just contains the index of words
         grads['W_embed'] = word_embedding_backward(d_captions_in_embed, cache_embed)
@@ -266,6 +274,8 @@ class CaptioningRNN(object):
         # Bootstrap
         prev_word = self._start * np.ones((N, 1), dtype=np.int32)
         prev_h, _ = affine_forward(features, W_proj, b_proj)
+        if self.cell_type == "lstm":
+            prev_c = np.zeros(prev_h.shape)
         
         # Iteration
         for i in range(max_length):
@@ -279,6 +289,9 @@ class CaptioningRNN(object):
             #     then also store prev_word_hidden(N, H) as prev_h
             if self.cell_type == "rnn":
                 prev_word_hidden, _ = rnn_step_forward(prev_word_embed, prev_h, Wx, Wh, b)
+                prev_h = prev_word_hidden
+            elif self.cell_type == "lstm":
+                prev_word_hidden, prev_c, _ = lstm_step_forward(prev_word_embed, prev_h, prev_c, Wx, Wh, b)
                 prev_h = prev_word_hidden
             
             # (3) Transform prev_word_hidden(N, H) to prev_word_out(N, V)
