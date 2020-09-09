@@ -15,7 +15,30 @@ def tv_loss(img, tv_weight):
     """
     # Your implementation should be vectorized and not require any loops!
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    
+    # NOTE:
+    # for any given c (0 <= c < C):
+    # calculate the L2_loss of the matrix below is equals to horizontal Total-variation
+    # | 1 -1    |
+    # |    1 -1 | .dot( img[0, :, :, c] )
+    # |       1 |
 
+    # but I cannot figure out a more neat way to get `Jordan Matrix` and perform matmul() ... orz
+    
+    tv_loss = 0.0
+    
+    _, H, W, C = img.shape
+    
+    # calculate vertical total-variation, using "broadcast" tf.matmul()
+    jordan = tf.constant((np.eye(H) - np.eye(H, k=1))[:-1, :], dtype=tf.float32)
+    tv_loss += tv_weight * tf.nn.l2_loss(tf.matmul(jordan, tf.transpose(img[0], perm=[2, 0, 1]))) * 2
+    
+    # calculate horizontal total-variation, using "broadcast" tf.matmul()
+    jordan = tf.constant((np.eye(W) - np.eye(W, k=-1))[:, :-1], dtype=tf.float32)
+    tv_loss += tv_weight * tf.nn.l2_loss(tf.matmul(tf.transpose(img[0], perm=[2, 0, 1]), jordan)) * 2
+    
+    return tv_loss
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -42,6 +65,14 @@ def style_loss(feats, style_layers, style_targets, style_weights):
     # not be short code (~5 lines). You will need to use your gram_matrix function.
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
+    style_loss = 0.
+    
+    for i in range(len(style_layers)):
+        gram_i = gram_matrix(feats[style_layers[i]])
+        style_loss += style_weights[i] * tf.nn.l2_loss(gram_i - style_targets[i]) * 2
+    
+    return style_loss
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -61,7 +92,17 @@ def gram_matrix(features, normalize=True):
       Gram matrices for the input image.
     """
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    _, H, W, C = features.shape
+    
+    features_flat = tf.reshape(features, [-1, C])
+    gram = tf.matmul(tf.transpose(features_flat), features_flat)
+    
+    if normalize == True:
+        gram = gram / (H*W*C)
+    
+    return gram
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -79,7 +120,11 @@ def content_loss(content_weight, content_current, content_original):
     - scalar content loss
     """
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    # see `tf.nn.l2_loss` at: https://www.tensorflow.org/api_docs/python/tf/nn/l2_loss
+    
+    return content_weight * tf.nn.l2_loss(content_current[0] - content_original) * 2
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
