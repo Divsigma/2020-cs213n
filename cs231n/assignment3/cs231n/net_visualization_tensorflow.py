@@ -34,7 +34,19 @@ def compute_saliency_maps(X, y, model):
     # 4) Finally, process the returned gradient to compute the saliency map.      #
     ###############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    N, _, _, _ = X.shape
+    
+    img = tf.Variable(X)
+    
+    with tf.GradientTape() as tape:
+        tape.watch(img)
+        scores = model(img)
+        correct_scores = tf.gather(scores, tf.stack([tf.range(N), y]), axis=1)
+        
+    grad = tape.gradient(correct_scores, img)
+    saliency = np.max(np.abs(grad.numpy()), axis=3)
+     
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -83,7 +95,26 @@ def make_fooling_image(X, target_y, model):
     # progress over iterations to check your algorithm.                          #
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    X_fooling_img = tf.Variable(X_fooling)
+    
+    for i in range(0, 100):
+        with tf.GradientTape() as tape:
+            tape.watch(X_fooling_img)
+            scores = model(X_fooling_img)
+            if tf.math.argmax(scores, axis=1) == target_y:
+                break
+            correct_score = tf.gather(scores, target_y, axis = 1)
+        
+        grad = tape.gradient(correct_score, X_fooling_img)
+        X_fooling_img.assign_add(learning_rate/tf.norm(grad) * grad)
+    
+    if i < 100:
+        print('fooling image generation success after %d times of iterations' % i)
+    else:
+        print('fooling image generation failure after %d times of iterations' % i)
+    X_fooling = X_fooling_img.numpy()
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -102,6 +133,16 @@ def class_visualization_update_step(X, model, target_y, l2_reg, learning_rate):
     # Be very careful about the signs of elements in your code.            #
     ########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    
+    X = tf.Variable(X)                 # `X` is returned from jitter(), it's a Tensor (immutable for tensorflow)
+    
+    with tf.GradientTape() as tape:
+        tape.watch(X)
+        scores = model(X)
+        target_score = tf.gather(scores, target_y, axis=1) - l2_reg * tf.norm(X)
+        
+        grad = tape.gradient(target_score, X)
+        X.assign_add(learning_rate/tf.norm(grad) * grad)
 
     pass
 
