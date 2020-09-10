@@ -15,7 +15,9 @@ def leaky_relu(x, alpha=0.01):
     """
     # TODO: implement leaky ReLU
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    return tf.maximum(x, alpha * x)
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -34,7 +36,9 @@ def sample_noise(batch_size, dim, seed=None):
         tf.random.set_seed(seed)
     # TODO: sample and return noise
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    return tf.random.uniform(shape=(batch_size, dim), minval=-1, maxval=1)
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -59,7 +63,30 @@ def discriminator(seed=None):
     # HINT: tf.keras.models.Sequential might be helpful.                         #
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    #####################################################################
+    # GIVEN ARCHITECTURE:                                               #
+    #                                                                   #
+    # - Fully connected layer with input size 784 and output size 256   #
+    # - LeakyReLU with alpha 0.01                                       #
+    # - Fully connected layer with output size 256                      #
+    # - LeakyReLU with alpha 0.01                                       #
+    # - Fully connected layer with output size 1                        #
+    #####################################################################
+    
+    # NOTE: with "lazy-evalutaion-like" workflow, 
+    # if I omit the `input_shape` or the Input layer,
+    # Weights will not be created before this model is first called 
+    
+    layers = [
+        tf.keras.Input((784,)),
+        tf.keras.layers.Dense(256, activation=lambda x: leaky_relu(x, 0.01), use_bias=True), 
+        tf.keras.layers.Dense(256, activation=lambda x: leaky_relu(x, 0.01), use_bias=True), 
+        tf.keras.layers.Dense(1, use_bias=True)
+    ]
+    
+    model = tf.keras.Sequential(layers)
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -87,7 +114,29 @@ def generator(noise_dim=NOISE_DIM, seed=None):
     # HINT: tf.keras.models.Sequential might be helpful.                         #
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    
+    ###########################################################################################
+    # GIVEN ARCHITECTURE:                                                                     #
+    #                                                                                         #
+    # - Fully connected layer with inupt size tf.shape(z)[1] (the number of noise dimensions) #
+    #   and output size 1024                                                                  #
+    # - `ReLU`                                                                                #
+    # - Fully connected layer with output size 1024                                           #
+    # - `ReLU`                                                                                #
+    # - Fully connected layer with output size 784                                            #
+    # - `TanH` (To restrict every element of the output to be in the range [-1,1])            #
+    ###########################################################################################
+    
+    layers = [
+        tf.keras.Input((noise_dim,)),
+        tf.keras.layers.Dense(1024, activation=tf.nn.relu, use_bias=True),
+        tf.keras.layers.Dense(1024, activation=tf.nn.relu, use_bias=True),
+        tf.keras.layers.Dense(784, activation=tf.nn.tanh, use_bias=True)
+    ]
+    
+    model = tf.keras.Sequential(layers)
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -110,6 +159,14 @@ def discriminator_loss(logits_real, logits_fake):
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
+    cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    
+    loss = cross_entropy(y_true=tf.ones(logits_real.shape), y_pred=logits_real)
+    loss += cross_entropy(y_true=tf.zeros(logits_fake.shape), y_pred=logits_fake)
+    # Optional way to compute loss on logits_fake:
+    # loss = cross_entropy(y_true=tf.ones(logits_real.shape), y_pred=logits_real)
+    # loss += cross_entropy(y_true=tf.ones(logits_fake.shape), y_pred=-logits_fake)
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -127,7 +184,22 @@ def generator_loss(logits_fake):
     """
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    # Optional ways to compute loss (G for generator and D for discriminator below):
+    #
+    # 1. Transfer output of G back to scores, then compute loss according to definition:
+    # scores = tf.math.exp(logits_fake) / (tf.math.exp(logits_fake) + 1.0)
+    # loss = - tf.math.reduce_mean(tf.math.log(scores))
+    #
+    # 2. Regard output of G as logits of scores (actually it is ! check out the notebook cell for details),
+    #    then compute loss based on output of G
+    #    NOTE: this method seems to achieve the highest precision
+    # loss = - tf.math.reduce_mean(logits_fake) + tf.math.reduce_mean(tf.math.log(1.0 + tf.math.exp(logits_fake)))
+    #
+    # 3. Use the packed function tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    cross_entropy = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    loss = cross_entropy(y_true=tf.ones(logits_fake.shape), y_pred=logits_fake)
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -149,7 +221,10 @@ def get_solvers(learning_rate=1e-3, beta1=0.5):
     D_solver = None
     G_solver = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    D_solver = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=beta1, name='D_adam')
+    G_solver = tf.keras.optimizers.Adam(learning_rate=learning_rate, beta_1=beta1, name='G_adam')
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -168,7 +243,12 @@ def ls_discriminator_loss(scores_real, scores_fake):
     """
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    N, _ = scores_real.shape
+    
+    loss = tf.nn.l2_loss(scores_real - 1) / N
+    loss += tf.nn.l2_loss(scores_fake) / N
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -186,7 +266,11 @@ def ls_generator_loss(scores_fake):
     """
     loss = None
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    N, _ = scores_fake.shape
+    
+    loss = tf.nn.l2_loss(scores_fake - 1) / N
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -209,7 +293,37 @@ def dc_discriminator():
     # HINT: tf.keras.models.Sequential might be helpful.                         #
     ##############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
+    
+    ##############################################################################
+    # GIVEN ARCHITECTURE:                                                        #
+    #                                                                            #
+    # - Conv2D: 32 Filters, 5x5, Stride 1, padding 0                             #
+    # - Leaky ReLU(alpha=0.01)                                                   #
+    # - Max Pool 2x2, Stride 2                                                   #
+    # - Conv2D: 64 Filters, 5x5, Stride 1, padding 0                             #
+    # - Leaky ReLU(alpha=0.01)                                                   #
+    # - Max Pool 2x2, Stride 2                                                   #
+    # - Flatten                                                                  #
+    # - Fully Connected with output size 4 x 4 x 64                              #
+    # - Leaky ReLU(alpha=0.01)                                                   #
+    # - Fully Connected with output size 1                                       #
+    ##############################################################################
+    
+    layers = [
+        tf.keras.Input((784,)),
+        tf.keras.layers.Reshape((28, 28, 1)),
+        
+        tf.keras.layers.Conv2D(32, kernel_size=5, strides=1, padding='valid', activation=lambda x: leaky_relu(x, 0.01), use_bias=True),
+        tf.keras.layers.MaxPool2D((2, 2), strides=2),
+        tf.keras.layers.Conv2D(64, kernel_size=5, strides=1, padding='valid', activation=lambda x: leaky_relu(x, 0.01), use_bias=True),
+        tf.keras.layers.MaxPool2D((2, 2), strides=2),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(4*4*64, activation=lambda x: leaky_relu(x, 0.01), use_bias=True),
+        tf.keras.layers.Dense(1, use_bias=True)
+    ]
+    
+    model = tf.keras.Sequential(layers)
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -232,6 +346,37 @@ def dc_generator(noise_dim=NOISE_DIM):
     # TODO: implement architecture
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
+    ############################################################################
+    # GIVEN ARCHITECTURE:                                                      #
+    #                                                                          #
+    # - Fully connected with output size 1024                                  #
+    # - `ReLU`                                                                 #
+    # - BatchNorm                                                              #
+    # - Fully connected with output size 7 x 7 x 128                           #
+    # - `ReLU`                                                                 #
+    # - BatchNorm                                                              #
+    # - Resize into Image Tensor of size 7, 7, 128                             #
+    # - Conv2D^T (transpose): 64 filters of 4x4, stride 2                      #
+    # - `ReLU`                                                                 #
+    # - BatchNorm                                                              #
+    # - Conv2d^T (transpose): 1 filter of 4x4, stride 2                        #
+    # - `TanH`                                                                 #
+    ############################################################################
+    
+    layers = [
+        tf.keras.Input((noise_dim,)),
+        tf.keras.layers.Dense(1024, activation=tf.nn.relu, use_bias=True),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(7*7*128, activation=tf.nn.relu, use_bias=True),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Reshape((7, 7, 128)),
+        tf.keras.layers.Conv2DTranspose(64, kernel_size=4, strides=2, padding='same', activation=tf.nn.relu),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Conv2DTranspose(1, kernel_size=4, strides=2, padding='same', activation=tf.nn.tanh),
+    ]
+    
+    model = tf.keras.Sequential(layers)
+    
     pass
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -264,7 +409,8 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
                 logits_real = D(preprocess_img(real_data))
 
                 g_fake_seed = sample_noise(batch_size, noise_size)
-                fake_images = G(g_fake_seed)
+                # fake_images = G(g_fake_seed)
+                fake_images = G(g_fake_seed, training=True)                   # should I add `training=True` for DCGAN ?
                 logits_fake = D(tf.reshape(fake_images, [batch_size, 784]))
 
                 d_total_error = discriminator_loss(logits_real, logits_fake)
@@ -273,7 +419,8 @@ def run_a_gan(D, G, D_solver, G_solver, discriminator_loss, generator_loss,\
             
             with tf.GradientTape() as tape:
                 g_fake_seed = sample_noise(batch_size, noise_size)
-                fake_images = G(g_fake_seed)
+                # fake_images = G(g_fake_seed)
+                fake_images = G(g_fake_seed, training=True)                  # same question as above
 
                 gen_logits_fake = D(tf.reshape(fake_images, [batch_size, 784]))
                 g_error = generator_loss(gen_logits_fake)
