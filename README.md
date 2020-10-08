@@ -59,6 +59,18 @@
 
 <br />
 
+## 2. `./ThinkDSP`（Allen B. Downey的《Python数字信号处理应用》配套代码）
+
+- 源仓库地址：https://github.com/AllenDowney/ThinkDSP
+- 本仓库主要用于备份自己看书过程中对代码的一点点整理（附在每个notebook开头的cell中了）。改动了chap09的有关微分和差分的图的label（我看到是翻译版图书，这一章的翻译似有derivative和difference的混淆）
+- 有点遗憾，课后练习全都没做
+
+
+
+<br />
+
+<br />
+
 ----
 
 
