@@ -170,6 +170,7 @@ def adam(w, dw, config=None):
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
     # t is your iteration counter going from 1 to infinity
+    config['t'] += 1 # update t
     
     config['m'] = config['beta1'] * config['m'] + (1-config['beta1']) * dw
     mt = config['m'] / (1 - config['beta1']**config['t'])
